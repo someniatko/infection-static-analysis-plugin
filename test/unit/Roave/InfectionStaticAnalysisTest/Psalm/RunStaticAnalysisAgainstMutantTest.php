@@ -33,10 +33,6 @@ use function unlink;
 final class RunStaticAnalysisAgainstMutantTest extends TestCase
 {
     private const PSALM_WORKING_DIRECTORY = __DIR__ . '/../../../../..';
-    private Mutant $mutantWithValidCode;
-    private Mutant $mutantWithInvalidCode;
-    private Mutant $mutantWithValidCodeReferencingProjectFiles;
-    private Mutant $mutantWithValidCodeReferencingReflectionApi;
     private RunStaticAnalysisAgainstMutant $runStaticAnalysis;
 
     /** @var list<string> */
@@ -45,140 +41,6 @@ final class RunStaticAnalysisAgainstMutantTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-
-        $validCode = <<<'PHP'
-<?php
-
-/**
- * @psalm-param positive-int $a 
- * @psalm-param positive-int $b 
- * @psalm-return positive-int 
- */
-function add(int $a, int $b): int {
-    return $a + $b;
-}
-PHP;
-
-        $invalidCode = <<<'PHP'
-<?php
-
-/**
- * @psalm-param positive-int $a 
- * @psalm-param positive-int $b 
- * @psalm-return positive-int 
- */
-function add(int $a, int $b): int {
-    return $a - $b;
-}
-PHP;
-
-        $validCodeReferencingProjectFiles = <<<'PHP'
-<?php
-
-function add(array $input): int {
-    return count((new \Roave\InfectionStaticAnalysis\Stub\ArrayFilter())->makeAList($input));
-}
-PHP;
-
-        $validCodeReferencingReflectionApi = <<<'PHP'
-<?php
-
-function hasMethod(object $input, string $method): bool {
-    return (new ReflectionClass($input))
-        ->hasMethod($method);
-}
-PHP;
-
-        $declaredClassSymbol = <<<'PHP'
-<?php class DeclaredClassSymbol {}
-PHP;
-
-        $validCodePath                         = tempnam(sys_get_temp_dir(), 'valid-code-');
-        $invalidCodePath                       = tempnam(sys_get_temp_dir(), 'invalid-code-');
-        $validCodeReferencingProjectFilesPath  = tempnam(sys_get_temp_dir(), 'valid-code-referencing-project-files-');
-        $validCodeReferencingReflectionApiPath = tempnam(sys_get_temp_dir(), 'valid-code-referencing-reflection-api-');
-        $declaredClassSymbolPath               = tempnam(sys_get_temp_dir(), 'declared-class-symbol-');
-        $repeatedDeclaredClassSymbolPath       = tempnam(sys_get_temp_dir(), 'repeated-declared-class-symbol-');
-
-        file_put_contents($validCodePath, $validCode);
-        file_put_contents($invalidCodePath, $invalidCode);
-        file_put_contents($validCodeReferencingProjectFilesPath, $validCodeReferencingProjectFiles);
-        file_put_contents($validCodeReferencingReflectionApiPath, $validCodeReferencingReflectionApi);
-        file_put_contents($declaredClassSymbolPath, $declaredClassSymbol);
-        file_put_contents($repeatedDeclaredClassSymbolPath, $declaredClassSymbol);
-
-        $mutationAttributes = array_combine(
-            MutationAttributeKeys::ALL,
-            array_map('strlen', MutationAttributeKeys::ALL)
-        );
-
-        $this->mutantWithValidCode = new Mutant(
-            $validCodePath,
-            new Mutation(
-                'foo',
-                [],
-                'Plus',
-                $mutationAttributes,
-                '',
-                MutatedNode::wrap([]),
-                0,
-                []
-            ),
-            now($validCode),
-            now(''),
-            now('')
-        );
-
-        $this->mutantWithInvalidCode = new Mutant(
-            $invalidCodePath,
-            new Mutation(
-                'foo',
-                [],
-                'Plus',
-                $mutationAttributes,
-                '',
-                MutatedNode::wrap([]),
-                0,
-                []
-            ),
-            now($invalidCode),
-            now(''),
-            now('')
-        );
-
-        $this->mutantWithValidCodeReferencingProjectFiles = new Mutant(
-            $validCodeReferencingProjectFilesPath,
-            new Mutation(
-                'foo',
-                [],
-                'Plus',
-                $mutationAttributes,
-                '',
-                MutatedNode::wrap([]),
-                0,
-                []
-            ),
-            now($validCodeReferencingProjectFiles),
-            now(''),
-            now('')
-        );
-
-        $this->mutantWithValidCodeReferencingReflectionApi = new Mutant(
-            $validCodeReferencingReflectionApiPath,
-            new Mutation(
-                'foo',
-                [],
-                'Plus',
-                $mutationAttributes,
-                '',
-                MutatedNode::wrap([]),
-                0,
-                []
-            ),
-            now($validCodeReferencingProjectFiles),
-            now(''),
-            now('')
-        );
 
         if (! defined('PSALM_VERSION')) {
             define('PSALM_VERSION', Versions::getVersion('vimeo/psalm'));
@@ -212,32 +74,74 @@ PHP;
 
         $this->generatedMutantFiles = [];
 
-        unlink($this->mutantWithValidCode->getFilePath());
-        unlink($this->mutantWithInvalidCode->getFilePath());
-        unlink($this->mutantWithValidCodeReferencingProjectFiles->getFilePath());
-        unlink($this->mutantWithValidCodeReferencingReflectionApi->getFilePath());
-
         parent::tearDown();
     }
 
     public function testWillConsiderMutantValidIfNoErrorsAreDetectedByStaticAnalysis(): void
     {
-        self::assertTrue($this->runStaticAnalysis->isMutantStillValidAccordingToStaticAnalysis($this->mutantWithValidCode));
+        self::assertTrue($this->runStaticAnalysis->isMutantStillValidAccordingToStaticAnalysis($this->makeMutant(
+            'valid-mutated-code-',
+            <<<'PHP'
+<?php
+
+/**
+ * @psalm-param positive-int $a 
+ * @psalm-param positive-int $b 
+ * @psalm-return positive-int 
+ */
+function add(int $a, int $b): int {
+    return $a + $b;
+}
+PHP
+        )));
     }
 
     public function testWillConsiderMutantInvalidIfErrorsAreDetectedByStaticAnalysis(): void
     {
-        self::assertFalse($this->runStaticAnalysis->isMutantStillValidAccordingToStaticAnalysis($this->mutantWithInvalidCode));
+        self::assertFalse($this->runStaticAnalysis->isMutantStillValidAccordingToStaticAnalysis($this->makeMutant(
+            'invalid-mutated-code-',
+            <<<'PHP'
+<?php
+
+/**
+ * @psalm-param positive-int $a 
+ * @psalm-param positive-int $b 
+ * @psalm-return positive-int 
+ */
+function add(int $a, int $b): int {
+    return $a - $b;
+}
+PHP
+        )));
     }
 
     public function testWillConsiderMutantReferencingProjectFilesAsValid(): void
     {
-        self::assertTrue($this->runStaticAnalysis->isMutantStillValidAccordingToStaticAnalysis($this->mutantWithValidCodeReferencingProjectFiles));
+        self::assertTrue($this->runStaticAnalysis->isMutantStillValidAccordingToStaticAnalysis($this->makeMutant(
+            'valid-code-referencing-project-files-',
+            <<<'PHP'
+<?php
+
+function add(array $input): int {
+    return count((new \Roave\InfectionStaticAnalysis\Stub\ArrayFilter())->makeAList($input));
+}
+PHP
+        )));
     }
 
     public function testWillConsiderMutantReferencingReflectionApiAsValid(): void
     {
-        self::assertTrue($this->runStaticAnalysis->isMutantStillValidAccordingToStaticAnalysis($this->mutantWithValidCodeReferencingReflectionApi));
+        self::assertTrue($this->runStaticAnalysis->isMutantStillValidAccordingToStaticAnalysis($this->makeMutant(
+            'valid-code-referencing-reflection-api-',
+            <<<'PHP'
+<?php
+
+function hasMethod(object $input, string $method): bool {
+    return (new ReflectionClass($input))
+        ->hasMethod($method);
+}
+PHP
+        )));
     }
 
     public function testWillConsiderMutantWithRepeatedClassSymbolDeclarationAsEscaped(): void
